@@ -18,7 +18,7 @@ library(writexl)
 library(lwgeom)
 
 # --- Define Projections ---
-crs_wgs84 <- st_crs(4326)
+#crs_wgs84 <- st_crs(4326)
 
 # ========================================================================== #
 #                            LOAD & PREPARE DATA                             ####
@@ -120,8 +120,8 @@ tree_plot_data <- trees_with_plot_info %>%
   )
 
 # --- Process Additional PSP Data ---
-#additional_psp_data <- read.csv("./data/psp_tree_data.csv")
-additional_psp_data <- read.csv("./data/Tableau_placette_altitude_en_plus.csv")
+additional_psp_data <- read.csv("./data/psp_tree_data.csv")
+#additional_psp_data <- read.csv("./data/Tableau_placette_altitude_en_plus.csv")
 additional_subset <- additional_psp_data %>%
   mutate(PlacetteID = str_pad(as.character(PlacetteID), width = 10, pad = "0")) %>%
   dplyr::select(PlacetteID, Type_Eco, Veg_Pot, Exposition, Pente, Sdom_Bio, Cl_Drai, sand_015cm, cec_015cm) %>%
