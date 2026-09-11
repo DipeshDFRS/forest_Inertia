@@ -120,12 +120,17 @@ tree_plot_data <- trees_with_plot_info %>%
   )
 
 # --- Process Additional PSP Data ---
-additional_psp_data <- read.csv("./data/psp_tree_data.csv")
+#additional_psp_data <- read.csv("./data/psp_tree_data.csv")
 #additional_psp_data <- read.csv("./data/Tableau_placette_altitude_en_plus.csv")
+load("./data/psp_data_final.rda")
+additional_psp_data <- psp_data_final
 additional_subset <- additional_psp_data %>%
   mutate(PlacetteID = str_pad(as.character(PlacetteID), width = 10, pad = "0")) %>%
-  dplyr::select(PlacetteID, Type_Eco, Veg_Pot, Exposition, Pente, Sdom_Bio, Cl_Drai, sand_015cm, cec_015cm) %>%
-  dplyr::distinct() %>%
+  dplyr::select(PlacetteID, Type_Eco, Veg_Pot, Exposition, Pente, Sdom_Bio, Cl_Drai, sand_015cm, cec_015cm) %>% 
+  #dplyr::distinct() %>%
+  group_by(PlacetteID) %>%
+  slice(1) %>%      # Keep the first record (and first Type_Eco) for each plot
+  ungroup() %>%
   dplyr::mutate(
     Type_Eco   = as.character(Type_Eco),
     Veg_Pot    = as.character(Veg_Pot),
@@ -164,7 +169,7 @@ get_mode <- function(x) {
   ux[which.max(tabulate(match(x, ux)))]
 }
 
-# FIX: Assigned back to Pente instead of creating Pent
+# Assigned back to Pente instead of creating Pent
 tree_plot_data_final <- tree_plot_data_filled %>%
   group_by(PlacetteID) %>%
   mutate(across(all_of(cols_to_fill), ~ ifelse(is.na(.x), get_mode(.x), .x))) %>%
@@ -177,26 +182,135 @@ tree_plot_data_final <- tree_plot_data_filled %>%
 tree_plot_data_final_test <- tree_plot_data_final %>% 
   dplyr::select(PlacetteID, Type_Eco, Veg_Pot, Sdom_Bio, Cl_Drai, sand_015cm, cec_015cm) %>% 
   distinct()
+colSums(is.na(tree_plot_data_final_test))
 
-# --- Filter Down Steps ---
+# #--- Filter Down Steps ---
 # final_data_recent <- tree_plot_data_final %>%
-#   filter(no_mes %in% c(1, 2, 3)) #%>% 
-#   #filter(version %in% c("1er inv. 1970 à 1974", "1er inv. 1975 à 1981")) 
+#   filter(no_mes %in% c(1, 2, 3)) #%>%
+#   filter(version %in% c("1er inv. 1970 à 1974", "1er inv. 1975 à 1981"))
 
+#--- Filter Down Steps ---
+# final_data_recent <- tree_plot_data_final %>%
+#   group_by(`PlacetteID`) %>%
+#   filter(all(c(1, 2, 3) %in% no_mes)) %>%
+#   ungroup() %>% 
+#   filter(no_mes == 1) %>%
+#   filter(version %in% c("1er inv. 1970 à 1974", "1er inv. 1975 à 1981"))
+
+
+
+#data for simulation
 final_data_recent <- tree_plot_data_final %>%
   group_by(`PlacetteID`) %>%
   filter(all(c(1, 2, 3) %in% no_mes)) %>%
-  ungroup()
+  ungroup()%>% 
+  filter(no_mes == 1)
 
-final_data_recent_subset <- final_data_recent %>%
-  filter(no_mes == 1) %>%
-  rename(Year = year_sond)
+# final_data_recent_subset <- final_data_recent %>%
+#   filter(no_mes == 1) %>%
+#   rename(Year = year_sond)
 
 # final_data_recent_subset <- final_data_recent %>%
 #   filter(no_mes == 1) %>%
 #   rename(Year = date_sond)
 
+# # --- Filter for Recent Measurements ---
+# tree_plot_data_gaspesie <- trees_gaspesie_with_plot_info %>%
+#   mutate(date_sond = as.Date(date_sond))
+# 
+# final_data_recent <- tree_plot_data_gaspesie %>%
+#   filter(date_sond >= as.Date("2017-01-01"))
+
+#Baptiste code
+
+final_data_targ_plot <- tree_plot_data_final %>%
+  group_by(`PlacetteID`) %>%
+  filter(all(c(1, 2, 3) %in% no_mes)) %>%
+  select(all_of(c("PlacetteID", "no_mes", "year_sond"))) %>%
+  distinct()
+
+list_plots <- unique(final_data_targ_plot[["PlacetteID"]])
+n <- length(list_plots)
+
+dict_plot_mes <- list()
+for (i in 1:n) {
+  print(paste0("i=", i))
+  sub_df <- final_data_targ_plot %>%
+    filter(PlacetteID==list_plots[i])
+  list_dates <- sub_df[["year_sond"]]
+  dict_plot_mes[[list_plots[i]]] <- list_dates
+}
+
+saveRDS(object=dict_plot_mes, file="data/dict_custom.rds")
+
+dict_plot_mes <- readRDS("data/dict_custom.rds")
+
+# full code
+library(Artemis2014)
+plots <- names(dict_plot_mes)
+n <- length(plots)
+
+for (i in 1:n) {
+  print(paste0("plot=", plots[i]))
+  list_dates <- dict_plot_mes[[plots[i]]]
+  num_mes <- length(list_dates)
+  start_date <- list_dates[1]
+  stop_date <- list_dates[num_mes]
+  num_steps <- round((stop_date - start_date)/10 + 1)
+  
+  sub_df <- final_data_targ_plot %>%
+    filter(PlacetteID==plots[i])
+  
+  result_rda <- simulateurArtemis(
+    Data_ori = sub_df, 
+    Horizon = num_steps, 
+    AnneeDep = start_date,
+    Tendance = 0, 
+    Residuel = 0,
+    FacHa = 25, 
+    EvolClim = 0, 
+    AccModif = 'ORI', 
+    MortModif = 'ORI', 
+    RCP = 'RCP45' 
+  )
+}
+
+
+# test code on 50 plots
+
+plots_test <- sample(plots, size=50)
+
+for (i in 1:50) {
+  print(paste0("plot=", plots_test[i]))
+  list_dates <- dict_plot_mes[[plots_test[i]]]
+  num_mes <- length(list_dates)
+  start_date <- list_dates[1]
+  stop_date <- list_dates[num_mes]
+  num_steps <- round((stop_date - start_date)/10 + 1)
+  
+  sub_df <- final_data_targ_plot %>%
+    filter(PlacetteID==plots_test[i])
+  
+  result_rda <- simulateurArtemis(
+    Data_ori = sub_df, 
+    Horizon = num_steps, 
+    AnneeDep = start_date,
+    Tendance = 0, 
+    Residuel = 0,
+    FacHa = 25, 
+    EvolClim = 0, 
+    AccModif = 'ORI', 
+    MortModif = 'ORI', 
+    RCP = 'RCP45' 
+  )
+}
+
+
 #test NA plotwise
+final_data_recent_test <- final_data_recent %>% 
+  dplyr::select(PlacetteID, Type_Eco, Veg_Pot, Sdom_Bio, Cl_Drai, sand_015cm, cec_015cm) %>% 
+  distinct()
+
 final_data_recent_subset_test <- final_data_recent_subset %>% 
   dplyr::select(PlacetteID, Type_Eco, Veg_Pot, Sdom_Bio, Cl_Drai, sand_015cm, cec_015cm) %>% 
   distinct()
